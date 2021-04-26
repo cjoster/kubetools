@@ -95,9 +95,6 @@ while (( "${#}" )); do
 	shift
 done
 
-echo config: $config
-echo context: $context
-
 [ -z "${config}" ] || config="--kubeconfig=${config}"
 [ -z "${context}" ] || context="--context=${context}"
 
