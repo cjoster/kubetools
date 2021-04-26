@@ -1,0 +1,139 @@
+#!/bin/bash
+
+###########################################################################
+#   kubectl-project                                                       #
+#                                                                         #
+#     A kubectl plugin to simplify switching between namespaces in a      #
+#     kubernetes cluster.                                                 #
+#                                                                         #
+# Copyright (C) 2021 CJ Oster (ocj@vmware.com)                            #
+#                                                                         #
+# This program is free software: you can redistribute it and/or modify    #
+# it under the terms of the GNU Lesser General Public License as          #
+# published by the Free Software Foundation, either version 3 of the      #
+# License, or (at your option) any later version.                         #
+#                                                                         #
+# This program is distributed in the hope that it will be useful, but     #
+# WITHOUT ANY WARRANTY; without even the implied warranty of              #
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser #
+# General Public License for more details.                                #
+#                                                                         #
+# You should have received a copy of the GNU Lesser General Public        #
+# License along with this program. If not, see                            #
+# <https://www.gnu.org/licenses/>.                                        #
+###########################################################################
+
+set -euo pipefail
+
+[ -z "${DEBUG+x}" ] || set -x
+
+name="$(echo "$(basename "${0}" | tr -- -_ ' -')")"
+
+function die {
+	>&2 echo "${1:-UNKNOWN ERROR}"
+	>&2 echo "Use \"${name} -h\" or \"${name} help\" to get available options."
+	exit 1
+}
+
+function usage {
+	>&2 echo "Usage:"
+	>&2 echo -e "\t${name} [ namespace ]"
+	>&2 echo
+	>&2 echo -e "\tnamespace : Name of the namespace to switch to. If omitted, displays"
+	>&2 echo -e "\t            the current namespace."
+	>&2 echo -e "\t-f,--force: Do not check that the namespace is valid before altering"
+	>&2 echo -e "\t            the local kubeconfig."
+	exit 0
+}
+
+ns=""
+force="0"
+config=""
+context=""
+while (( "${#}" )); do
+	case "${1}" in
+		"help") usage ;;
+		"-h") usage ;;
+		"--force") force=1 ;;
+		"-f")      force=1 ;;
+		"--kubeconfig"*)
+			[ "${1%%=*}" == "--kubeconfig" ] || die "Unrecognized option \"${1}\"."
+			if [ "${1#*=}" == "${1}" ]; then #no equal zign
+				if [ -n "${2:-}" ]; then
+					config="${2}"
+					shift
+				else
+					die "--kubeconfig parameter requires an argument."
+				fi
+			elif [ -z "${1#*=}" ]; then
+				die "--kubeconfig parameter requires an argument."
+			else
+				config="${1#*=}"
+			fi
+		;;
+		"--context"*)
+			[ "${1%%=*}" == "--context" ] || die "Unrecognized option \"${1}\"."
+			if [ "${1#*=}" == "${1}" ]; then #no equal zign
+				if [ -n "${2:-}" ]; then
+					context="${2}"
+					shift
+				else
+					die "--kubeconfig parameter requires an argument."
+				fi
+			elif [ -z "${1#*=}" ]; then
+				die "--kubeconfig parameter requires an argument."
+			else
+				context="${1#*=}"
+			fi
+		;;
+		*)
+			[ -z "${ns}" ] || die "Unexpected argument \"${1}\" on command line."
+			ns="${1}"
+		;;
+	esac
+	shift
+done
+
+echo config: $config
+echo context: $context
+
+[ -z "${config}" ] || config="--kubeconfig=${config}"
+[ -z "${context}" ] || context="--context=${context}"
+
+contexts="$(kubectl ${config} config get-contexts | sed 's/^[[:space:]]/_/')" && [ -n "${contexts}" ] && [ "$(echo "${contexts}" | wc -l)" -ge 2 ] || \
+	die "No contexts set in kubeconfig."
+body="$(echo "${contexts}" | tail -n +2)"
+if [ -n "${context}" ]; then
+	current="$(echo "${body}" | awk "{if(\$2==\"${context#*=}\"){print; exit;}}")"
+	[ -n "${current}" ] || die "No such context \"${context#*=}\" in kubeconfig."
+else
+	current="$(echo "${body}" | awk '{if($1=="*"){print; exit;}}')"
+	[ -n "${current}" ] || die "No current context set in kubeconfig. Use 'kubectl config use-context <context>' to set a current context."
+fi
+
+if [ -z "${ns}" ]; then
+
+	header="$(echo "${contexts}" | head -n 1)"
+	[ -n "$(echo "${header}" | sed -n '/^CURRENT[[:space:]]\{1,\}NAME[[:space:]]\{1,\}CLUSTER[[:space:]]\{1,\}AUTHINFO[[:space:]]\{1,\}NAMESPACE[[:space:]]*$/p')" ] || die "Output of \`kubectl config get-contexts\` is not what was expected."
+
+	tmp="${header%%NAMESPACE}"
+	offset="${#tmp}"
+
+	current="${current:$offset}"
+	[ -n "${current}" ] || current=default
+	[ -n "${context}" ] && context=" in context \"${context#*=}\"" 
+	echo "Current namespace is \"${current}\"${context}."
+	exit 0
+fi
+
+if [ "${force}" -eq "0" ]; then
+	[ -n "$(kubectl ${config} ${context} get namespaces --no-headers | awk "{if(\$1==\"${ns}\"){print \$1}}")" ] || die \
+		"Namespace \"${ns}\" does not exist or API cannot be reached. Use -f or --force to skip this check."
+fi
+
+nns="${ns}"
+[ "${nns}" != "default" ] || nns=""
+ctext=""
+[ -n "${context}" ] && ctext=" in context \"${context#*=}\"" || context="--current" 
+kubectl ${config} config set-context ${context#*=} --namespace="${nns}" > /dev/null && echo "Switched to namespace \"${ns}\"${ctext}." || die \
+	"Error setting namespace in current context."
