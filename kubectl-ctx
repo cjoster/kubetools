@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+function die {
+	>&2 echo "FATAL: ${@:-UNKNOWN ERROR}"
+	exit 1
+}
+
+type -P kubectl > /dev/null 2>&1 || die "No kubectl found in path."
+
+[ -n "${1:-}" ] || { kubectl config get-contexts; exit 0; }
+
+[ "${1}" == "$(echo "${1}" | sed '/[^[:alnum:]_@-]/d')" ] || die "Invalid characters in input."
+
+pat="$(echo "${1}" | head -n 1 | sed -e 's/[]\/$*.^[]/\\&/g')"
+
+contexts="$(kubectl config get-contexts --no-headers | sed 's/^*/ /' | awk '$1~/'"${1}"'/{print $1}' | grep -Ev '^[[:space:]]*$' || true)"
+
+[ -n "${contexts}" ] || die "No results for search string \"${1}\"."
+
+lines="$(echo "${contexts}" | wc -l )"
+
+if [ "${lines}" -eq "1" ]; then
+	kubectl config use-context "${contexts}"
+else
+	echo "Non-unique results:"
+	for c in ${contexts}; do
+		printf "\t%s\n" "${c}"
+	done
+fi
