@@ -28,4 +28,9 @@ else
 	for c in ${contexts}; do
 		printf "\t%s\n" "${c}"
 	done
+	if [ "$(echo "${contexts}" | grep -E '^'"${1}"'$' | wc -l || true)" -eq "1" ]; then
+		echo
+		echo "\"${1}\" is an exact match. Switching..."
+		kubectl config use-context "${1}"
+	fi
 fi
