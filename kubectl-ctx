@@ -11,6 +11,8 @@ type -P kubectl > /dev/null 2>&1 || die "No kubectl found in path."
 
 [ -n "${1:-}" ] || { kubectl config get-contexts; exit 0; }
 
+[ "$(echo "${1}" | wc -l)" == "1" ] || die "Multi-line patterns not supported."
+
 [ "${1}" == "$(echo "${1}" | sed '/[^[:alnum:]_@-]/d')" ] || die "Invalid characters in input."
 
 pat="$(echo "${1}" | head -n 1 | sed -e 's/[]\/$*.^[]/\\&/g')"
