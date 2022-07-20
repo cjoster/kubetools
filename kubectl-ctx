@@ -13,11 +13,9 @@ type -P kubectl > /dev/null 2>&1 || die "No kubectl found in path."
 
 [ "$(echo "${1}" | wc -l)" == "1" ] || die "Multi-line patterns not supported."
 
-[ "${1}" == "$(echo "${1}" | sed '/[^[:alnum:]_@-]/d')" ] || die "Invalid characters in input."
-
 pat="$(echo "${1}" | head -n 1 | sed -e 's/[]\/$*.^[]/\\&/g')"
 
-contexts="$(kubectl config get-contexts --no-headers | sed 's/^*/ /' | awk '$1~/'"${1}"'/{print $1}' | grep -Ev '^[[:space:]]*$' || true)"
+contexts="$(kubectl config get-contexts --no-headers | sed 's/^*/ /' | awk '$1~/'"${pat}"'/{print $1}' | grep -Ev '^[[:space:]]*$' || true)"
 
 [ -n "${contexts}" ] || die "No results for search string \"${1}\"."
 
@@ -30,7 +28,7 @@ else
 	for c in ${contexts}; do
 		printf "\t%s\n" "${c}"
 	done
-	if [ "$(echo "${contexts}" | grep -E '^'"${1}"'$' | wc -l || true)" -eq "1" ]; then
+	if [ "$(echo "${contexts}" | awk '$1~/^'"${pat}"'$/{print $1}' | wc -l || true)" -eq "1" ]; then
 		echo
 		echo "\"${1}\" is an exact match. Switching..."
 		kubectl config use-context "${1}"
