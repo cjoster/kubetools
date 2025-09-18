@@ -125,8 +125,21 @@ if [ -z "${ns}" ]; then
 fi
 
 if [ "${force}" -eq "0" ]; then
-	[ -n "$(kubectl ${config} ${context} get namespaces --no-headers | awk "{if(\$1==\"${ns}\"){print \$1}}")" ] || die \
-		"Namespace \"${ns}\" does not exist or API cannot be reached. Use -f or --force to skip this check."
+	namespaces="$(kubectl ${config} ${context} get namespaces --no-headers | cut -d" " -f 1)" || die \
+		"Failed to get namespaces from API. Use -f or --force to skip this check."
+	if [ -z "$(echo "${namespaces}" | awk "{if(\$1==\"${ns}\"){print \$1}}")" ]; then
+		candidates="$(echo "${namespaces}" | grep "${ns}" || true )"
+		lines="$(echo "${candidates}" | wc -w)"
+		if [ "${lines}" == "1" ]; then
+			ns="${candidates}"
+		elif [ "${lines}" == "0" ]; then
+			die "No namespace match for search string \"${ns}\". Use -f or --force to skip this check."
+		else
+			echo "Non-unique results:"
+			echo "${candidates}" | sed 's/^/\t/'
+			exit 1
+		fi
+	fi
 fi
 
 nns="${ns}"
